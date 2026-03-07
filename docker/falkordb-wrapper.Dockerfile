@@ -39,7 +39,7 @@ RUN if [ -f requirements.lock ]; then \
         pip install --no-cache-dir .; \
     fi
 
-# Remove the CLI launcher (see Dockerfile comment in hsbc-graph for details)
+# Remove the CLI launcher (not needed in wrapper pod)
 RUN rm -f /app/venv/bin/falkordb.so
 
 # Runtime stage

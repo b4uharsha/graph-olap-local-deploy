@@ -1,9 +1,9 @@
 SHELL := /bin/bash
 
-# Path to the hsbc-graph monorepo (source code + Helm charts).
+# Path to the graph-olap monorepo (source code + Helm charts).
 # Override if your monorepo is in a different location:
-#   make deploy MONOREPO_ROOT=/path/to/hsbc-graph
-MONOREPO_ROOT ?= ../../hsbc-graph
+#   make deploy MONOREPO_ROOT=/path/to/graph-olap
+MONOREPO_ROOT ?= ../../graph-olap
 
 # Kubernetes namespace
 NAMESPACE ?= graph-olap-local

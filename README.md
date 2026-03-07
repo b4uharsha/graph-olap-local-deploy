@@ -1,6 +1,6 @@
 # Graph OLAP — Local Deployment
 
-Self-contained tooling to build and run the full Graph OLAP stack on any developer machine. No HSBC internal tools, no private registries, no Earthly.
+Self-contained tooling to build and run the full Graph OLAP stack on any developer machine. No internal tools, no private registries, no Earthly.
 
 ## Prerequisites
 
@@ -18,17 +18,16 @@ Self-contained tooling to build and run the full Graph OLAP stack on any develop
 - **minikube**: `brew install minikube && minikube start`
 - **kind**: `brew install kind && kind create cluster`
 
-**Source code** — this folder must be a sibling of the `hsbc-graph` monorepo:
+**Source code** — this folder must be a sibling of the `graph-olap` monorepo:
 ```
 parent-dir/
-├── hsbc-graph/        ← source code (monorepo)
-└── falkordb/
-    └── local-deploy/  ← this folder
+├── graph-olap/                  ← source code (monorepo)
+└── graph-olap-local-deploy/     ← this folder
 ```
 
 If your layout differs, set `MONOREPO_ROOT`:
 ```bash
-export MONOREPO_ROOT=/path/to/hsbc-graph
+export MONOREPO_ROOT=/path/to/graph-olap
 ```
 
 ## Quick Start
@@ -134,7 +133,7 @@ with conn.cursor() as cur:
 conn.close()
 ```
 
-**Root cause:** `SnapshotService` in `packages/control-plane` does not read `starburst_catalog` from settings when creating export jobs. Requires a fix in the hsbc-graph source.
+**Root cause:** `SnapshotService` in `packages/control-plane` does not read `starburst_catalog` from settings when creating export jobs. Requires a fix in the monorepo source.
 
 ## Common Commands
 
@@ -217,7 +216,7 @@ local-deploy/
 
 ## Image Build Notes
 
-- All images use **public base images** — no HSBC internal registry needed
+- All images use **public base images** — no internal registry needed
 - `control-plane`, `falkordb-wrapper`, `ryugraph-wrapper`: Chainguard Python (`cgr.dev/chainguard/python`)
 - `export-worker`: Chainguard Python
 - `ryugraph-wrapper`: `python:3.12-slim` (ryugraph requires Python 3.12)

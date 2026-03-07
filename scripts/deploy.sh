@@ -6,13 +6,13 @@
 #   2. graph-olap   — control-plane + export-worker (umbrella Helm chart)
 #
 # Usage:
-#   MONOREPO_ROOT=../hsbc-graph NAMESPACE=graph-olap-local ./deploy.sh
+#   MONOREPO_ROOT=../graph-olap NAMESPACE=graph-olap-local ./deploy.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_DEPLOY_DIR="$(dirname "$SCRIPT_DIR")"
-MONOREPO_ROOT="${MONOREPO_ROOT:-$LOCAL_DEPLOY_DIR/../../hsbc-graph}"
+MONOREPO_ROOT="${MONOREPO_ROOT:-$LOCAL_DEPLOY_DIR/../../graph-olap}"
 MONOREPO_ROOT="$(cd "$MONOREPO_ROOT" && pwd)"
 NAMESPACE="${NAMESPACE:-graph-olap-local}"
 

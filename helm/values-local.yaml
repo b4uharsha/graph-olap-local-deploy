@@ -91,9 +91,9 @@ control-plane:
       cpuRequest: "500m"
       cpuLimit: "1"
     auth0:
-      jwksUrl: "https://sparklesparkle.auth0.com/.well-known/jwks.json"
-      audience: "https://api.hsbc.sparklingideas.co.uk"
-      issuer: "https://sparklesparkle.auth0.com/"
+      jwksUrl: "https://your-tenant.auth0.com/.well-known/jwks.json"
+      audience: "https://api.graph-olap.example.com"
+      issuer: "https://your-tenant.auth0.com/"
 
   env:
     GRAPH_OLAP_STARBURST_PASSWORD: ""   # set via --set in deploy.sh
@@ -276,10 +276,10 @@ oauth2Proxy:
     - --upstream=static://202
     - --reverse-proxy=true
     - --provider=oidc
-    - --oidc-issuer-url=https://sparklesparkle.auth0.com/
-    - --oidc-jwks-url=https://sparklesparkle.auth0.com/.well-known/jwks.json
-    - --oidc-extra-audience=https://api.hsbc.sparklingideas.co.uk
-    - --oidc-email-claim=https://api.hsbc.sparklingideas.co.uk/email
+    - --oidc-issuer-url=https://your-tenant.auth0.com/
+    - --oidc-jwks-url=https://your-tenant.auth0.com/.well-known/jwks.json
+    - --oidc-extra-audience=https://api.graph-olap.example.com
+    - --oidc-email-claim=https://api.graph-olap.example.com/email
     - --email-domain=*
     - --skip-jwt-bearer-tokens=true
     - --skip-auth-preflight=true

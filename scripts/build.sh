@@ -3,14 +3,14 @@
 # No Earthly or private registries required.
 #
 # Usage:
-#   MONOREPO_ROOT=../../hsbc-graph ./build.sh                    # Build all services
-#   MONOREPO_ROOT=../../hsbc-graph SVC=control-plane ./build.sh  # Build one service
+#   MONOREPO_ROOT=../../graph-olap ./build.sh                    # Build all services
+#   MONOREPO_ROOT=../../graph-olap SVC=control-plane ./build.sh  # Build one service
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_DEPLOY_DIR="$(dirname "$SCRIPT_DIR")"
-MONOREPO_ROOT="${MONOREPO_ROOT:-$LOCAL_DEPLOY_DIR/../../hsbc-graph}"
+MONOREPO_ROOT="${MONOREPO_ROOT:-$LOCAL_DEPLOY_DIR/../../graph-olap}"
 MONOREPO_ROOT="$(cd "$MONOREPO_ROOT" && pwd)"
 DOCKERFILE_DIR="$LOCAL_DEPLOY_DIR/docker"
 

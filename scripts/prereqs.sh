@@ -48,15 +48,15 @@ else
 fi
 
 # Monorepo root (caller sets MONOREPO_ROOT or we check the default)
-MONOREPO_ROOT="${MONOREPO_ROOT:-../../hsbc-graph}"
+MONOREPO_ROOT="${MONOREPO_ROOT:-../../graph-olap}"
 if [[ -d "$MONOREPO_ROOT/packages/control-plane" ]]; then
     ok "Monorepo found at $MONOREPO_ROOT"
 else
     fail "Monorepo not found at '$MONOREPO_ROOT'
-        Set MONOREPO_ROOT to the path of the hsbc-graph repo:
-          export MONOREPO_ROOT=/path/to/hsbc-graph
+        Set MONOREPO_ROOT to the path of the graph-olap repo:
+          export MONOREPO_ROOT=/path/to/graph-olap
         or:
-          make build MONOREPO_ROOT=/path/to/hsbc-graph"
+          make build MONOREPO_ROOT=/path/to/graph-olap"
 fi
 
 echo ""
