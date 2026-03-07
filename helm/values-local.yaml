@@ -15,7 +15,7 @@
 
 global:
   imageRegistry: ""
-  gcpProject: "testcicd-436812"
+  gcpProject: "your-gcp-project-id"
   environment: "development"
 
 # -----------------------------------------------------------------------------
@@ -54,9 +54,9 @@ control-plane:
     host: "0.0.0.0"
     port: "8080"
     debug: "true"
-    gcpProject: "testcicd-436812"
+    gcpProject: "your-gcp-project-id"
     gcs:
-      bucket: "graph-olap-local-dev"
+      bucket: "your-gcs-bucket"
     k8s:
       namespace: "graph-olap-local"
       inCluster: "true"
@@ -71,10 +71,10 @@ control-plane:
     extensionServer:
       url: "http://extension-server:80"
     starburst:
-      url: "https://harshagraph-free-cluster.trino.galaxy.starburst.io:443"
+      url: "https://your-cluster.trino.galaxy.starburst.io:443"
       catalog: "tpch"
       timeoutSeconds: "120"
-      user: "harshareddy2629@gmail.com/accountadmin"
+      user: "your-starburst-user@your-org/accountadmin"
     jobs:
       reconciliationIntervalSeconds: "10"
       lifecycleIntervalSeconds: "10"
@@ -159,9 +159,9 @@ export-worker:
       key: "GRAPH_OLAP_INTERNAL_API_KEY"
 
   config:
-    gcpProject: "testcicd-436812"
+    gcpProject: "your-gcp-project-id"
     starburst:
-      url: "https://harshagraph-free-cluster.trino.galaxy.starburst.io:443"
+      url: "https://your-cluster.trino.galaxy.starburst.io:443"
       catalog: "tpch"
       schema: "tiny"
       requestTimeoutSeconds: "30"
@@ -196,7 +196,7 @@ export-worker:
     - name: GOOGLE_APPLICATION_CREDENTIALS
       value: "/var/secrets/google/key.json"
     - name: GCS_BUCKET
-      value: "graph-olap-local-dev"
+      value: "your-gcs-bucket"
 
   resources:
     requests:
