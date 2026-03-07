@@ -16,7 +16,7 @@ MONOREPO_ROOT="${MONOREPO_ROOT:-$LOCAL_DEPLOY_DIR/../../graph-olap}"
 MONOREPO_ROOT="$(cd "$MONOREPO_ROOT" && pwd)"
 NAMESPACE="${NAMESPACE:-graph-olap-local}"
 
-HELM_CHARTS="$MONOREPO_ROOT/infrastructure/helm/charts"
+HELM_CHARTS="$LOCAL_DEPLOY_DIR/helm/charts"
 LOCAL_INFRA_CHART="$HELM_CHARTS/local-infra"
 APP_CHART="$HELM_CHARTS/graph-olap"
 JUPYTER_CHART="$HELM_CHARTS/jupyter-labs"
@@ -36,7 +36,6 @@ error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 validate() {
     if [[ ! -d "$LOCAL_INFRA_CHART" ]]; then
         error "local-infra chart not found at: $LOCAL_INFRA_CHART"
-        error "Is MONOREPO_ROOT correct? ($MONOREPO_ROOT)"
         exit 1
     fi
 

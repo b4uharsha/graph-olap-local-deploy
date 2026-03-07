@@ -171,8 +171,9 @@ make build          # Images were not built or need rebuilding
 
 **Helm dependency errors:**
 ```bash
-# Manually update helm dependencies in the monorepo
-helm dependency update $MONOREPO_ROOT/infrastructure/helm/charts/graph-olap
+# Manually update helm dependencies
+helm dependency update helm/charts/graph-olap
+helm dependency update helm/charts/local-infra
 ```
 
 **Port 30081 not responding after deploy:**
@@ -200,7 +201,8 @@ local-deploy/
 │   ├── falkordb-wrapper.Dockerfile
 │   └── ryugraph-wrapper.Dockerfile
 ├── helm/
-│   └── values-local.yaml      # Helm values for the local stack
+│   ├── values-local.yaml      # Helm values for the local stack
+│   └── charts/                # Helm charts (graph-olap, local-infra, jupyter-labs, common)
 ├── k8s/
 │   ├── control-plane-ingress.yaml   # nginx ingress routes
 │   ├── control-plane-rbac.yaml      # RBAC for dynamic wrapper pod spawning
