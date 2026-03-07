@@ -30,5 +30,4 @@ Control Plane API:
   curl http://localhost:8080/health
 {{- end }}
 
-For more information, see:
-  https://github.com/sparkling/hsbc-graph
+For more information, see the README in the graph-olap-local-deploy repository.
