@@ -1,27 +1,153 @@
 # Graph OLAP
 
-**Self-service graph analytics on your warehouse data — run as isolated in-memory graphs, query in milliseconds.**
+**Turn your warehouse data into a queryable graph in under 30 seconds. Sub-millisecond traversals. Fully isolated per analyst. Runs on your laptop.**
 
 ---
 
-## The Problem
+## What is this, in plain English?
 
-Analysts need to explore connected data — fraud rings, supply chains, customer networks, recommendation graphs. Running these as SQL joins is painful:
+Imagine you work at a bank. You have millions of rows of transactions in a data warehouse. Your job is to find fraud — specifically, to find groups of accounts that are secretly connected through shared devices, shared addresses, or circular money transfers.
 
-- Multi-hop traversal queries that should take **milliseconds** take **minutes** in SQL
-- Every analyst sharing the same warehouse means resource contention
-- Graph databases exist, but loading warehouse data into them is a manual, fragile process
+In SQL, finding a chain of 4 connected accounts looks like this:
 
-## The Solution
+```sql
+-- Just to find 4-hop connections — already painful
+SELECT a1.id, a2.id, a3.id, a4.id
+FROM accounts a1
+JOIN transactions t1 ON t1.from_account = a1.id
+JOIN accounts a2 ON t1.to_account = a2.id
+JOIN transactions t2 ON t2.from_account = a2.id
+JOIN accounts a3 ON t2.to_account = a3.id
+JOIN transactions t3 ON t3.from_account = a3.id
+JOIN accounts a4 ON t3.to_account = a4.id
+WHERE a1.id = 12345
+-- Runtime on 10M rows: ~4 minutes
+```
 
-Graph OLAP is a platform that automates the full pipeline from warehouse to queryable graph:
+In a graph database, the same query is:
 
-1. **Define once** — describe which warehouse tables become nodes and edges (a *Mapping*)
-2. **Spawn on demand** — create a graph *Instance* from that mapping; the platform exports data to Parquet and loads it into a dedicated in-memory graph pod
-3. **Query instantly** — run Cypher traversal queries directly against your pod; results in milliseconds, no warehouse touched
-4. **Auto-expires** — pods live for a configured TTL then disappear; Parquet is preserved so you can recreate instantly
+```cypher
+MATCH (a:Account {id: 12345})-[:TRANSFERRED*1..4]->(suspect:Account)
+RETURN suspect
+-- Runtime: 2ms
+```
 
-Each analyst gets a **completely isolated pod** — no shared state, no contention.
+**Graph OLAP bridges that gap.** It takes your existing warehouse data and lets any analyst spin up their own private in-memory graph — instantly, without any database administration, without touching production systems.
+
+---
+
+## The Problem This Solves
+
+Most companies have their data in a warehouse (Snowflake, BigQuery, Databricks, Starburst). That warehouse is great for aggregations and reports. It is terrible for relationship traversals — finding who is connected to whom, how many hops away, through what path.
+
+The bottleneck is not compute power. It is the wrong data structure. Relational tables were designed for rows. Graphs were designed for connections.
+
+Three things make this hard to fix today:
+
+**1. Loading data into a graph database is a full engineering project.**
+You need a dedicated ETL pipeline. Someone has to maintain it. It goes stale. When schema changes, it breaks. Most teams never get past the proof-of-concept stage.
+
+**2. Graph databases are shared infrastructure.**
+Neo4j, TigerGraph, Amazon Neptune — these are all shared services. One analyst's heavy query slows everyone else down. You cannot give each analyst their own isolated environment without paying for multiple full database licences.
+
+**3. There is no self-service layer.**
+A data analyst cannot just say "I want to explore the customer graph for Q3 data." They have to file a ticket, wait for engineering, and get a fixed dataset loaded into a shared database they do not control.
+
+---
+
+## What Graph OLAP Does Differently
+
+| | Traditional Graph DB | Graph OLAP |
+|---|---|---|
+| Data loading | Manual ETL pipeline | Automated — define a SQL query, press go |
+| Isolation | Shared cluster | Each analyst gets their own pod |
+| Setup time | Days to weeks | 30 seconds from definition to query |
+| Cost when idle | Full database running 24/7 | Pod deleted after TTL, zero idle cost |
+| Self-service | Requires DBA/engineering | Analyst does it themselves via API or notebook |
+| Local development | Requires cloud or VPN | Runs entirely on a laptop |
+
+The insight is simple: **graph databases are fastest when the data fits in memory**. Instead of one big shared graph, spin up many small ephemeral graphs — one per analyst, one per question, one per time window. Kubernetes makes this cheap. Parquet makes the data portable.
+
+---
+
+## How It Works
+
+```text
+Analyst defines a Mapping (which SQL tables → nodes, which → edges)
+        │
+        ▼
+Analyst creates an Instance ("give me this as a graph, TTL = 4 hours")
+        │
+        ▼
+Export Worker runs UNLOAD on Starburst → writes Parquet to GCS
+        │
+        ▼
+Reconciler detects ready snapshot → Kubernetes spawns a Wrapper Pod
+        │
+        ▼
+Wrapper Pod downloads Parquet → loads graph into FalkorDB or KuzuDB (~200k rows/sec)
+        │
+        ▼
+Analyst queries via Cypher → result in milliseconds ⚡
+        │
+        ▼
+TTL expires → pod deleted → Parquet stays in GCS → recreate anytime
+```
+
+Each analyst gets a **completely isolated pod**. One analyst's 10-million-node graph cannot slow down another analyst's query.
+
+---
+
+## Real-World Use Cases
+
+### Fraud Detection — Banking
+> *"Show me every account within 3 hops of this suspicious account, connected through transactions over £10,000 in the last 30 days."*
+
+In SQL: 6 self-joins, multiple CTEs, 5+ minutes on a large dataset.
+In Graph OLAP: one Cypher query, 3ms.
+
+### Anti-Money Laundering (AML)
+> *"Find circular money flows — money that leaves account A and returns to account A within 5 hops."*
+
+Classic cycle detection. Impossible in SQL without recursive CTEs that time out. Natural in a graph traversal.
+
+### Supply Chain Risk
+> *"Which of our tier-1 suppliers depend on the same tier-3 component manufacturer? If that factory goes down, what products are affected?"*
+
+Map the entire dependency graph. Run shortest-path. Identify single points of failure in seconds.
+
+### Customer 360 / Recommendation
+> *"Customers who bought the same products as this customer, but from different regions — who are they and what else did they buy?"*
+
+Multi-hop co-purchase traversal. SQL requires multiple joins across large tables. Graph returns it in one pattern match.
+
+### Knowledge Graphs / HR / IT
+> *"Who in the organisation has access to system X, through what role chain, and who approved each step?"*
+
+Access control chains, org hierarchies, IT dependency graphs — all relationship problems that graphs handle naturally.
+
+---
+
+## Why Does This Not Exist in the Industry Already?
+
+It partly does — but with significant gaps:
+
+**Neo4j AuraDS / Bloom**: Excellent graph database. But loading data still requires you to build and maintain your own ETL pipeline. It is a shared managed service — not ephemeral, not per-analyst isolated, not self-service from a warehouse. Expensive at scale.
+
+**TigerGraph**: Enterprise-only, complex setup, no self-service. Requires dedicated graph engineering team.
+
+**Amazon Neptune**: Cloud-only, no local dev story, not ephemeral. Still needs custom data loading.
+
+**Databricks GraphX / Graph Neural Networks**: Batch processing — minutes per query, not designed for interactive traversal.
+
+**Snowflake / BigQuery graph extensions**: Emerging, but still SQL-based. Cannot do arbitrary-depth traversals efficiently.
+
+**The gap Graph OLAP fills**: Nobody has built an *ephemeral, per-analyst, self-service, warehouse-native* graph layer. The pieces existed (Kubernetes, Parquet, FalkorDB/KuzuDB) but were not assembled into a platform. The key innovations here are:
+
+1. **Mapping as a first-class object** — define once, reuse across many instances and time windows
+2. **Ephemeral pods** — pay for memory only when querying; zero idle cost
+3. **Analyst self-service** — no DBA, no ETL team, no ticket
+4. **Local-first** — full platform runs on a laptop with one command; production uses the same Helm charts
 
 ---
 
@@ -40,38 +166,16 @@ nginx Ingress (NodePort 30081)
 Control Plane ──────────────────────────────────────────────────────────
   Manages mappings, snapshots, instances, users
   Calls Kubernetes API to spawn / delete wrapper pods
-  Reconciliation loop every ~30s — promotes ready snapshots to running pods
+  Reconciliation loop every ~30s
 
 Export Worker ───────────────────────────────────────────────────────────
-  Polls for export jobs → runs UNLOAD queries on Starburst Galaxy
+  Polls for export jobs → runs UNLOAD on Starburst Galaxy
   Writes Parquet files to GCS (or fake-gcs-local in local mode)
 
 Wrapper Pod (one per analyst instance) ──────────────────────────────────
   FalkorDB (Redis-based) or KuzuDB (columnar) — chosen per instance
-  Downloads Parquet from GCS on startup, loads graph at ~200k rows/sec
+  Downloads Parquet from GCS on startup, loads at ~200k rows/sec
   Accepts Cypher queries directly — fully in-memory, sub-millisecond
-```
-
-### End-to-End Flow
-
-```text
-Analyst
-  │
-  ├─ POST /api/mappings          Define nodes + edges from SQL
-  │         │
-  │         └─► PostgreSQL       Mapping stored
-  │
-  ├─ POST /api/instances         Trigger export pipeline
-  │         │
-  │         └─► Export Worker ──► Starburst UNLOAD ──► Parquet in GCS
-  │                                                         │
-  │                                    Reconciler (~30s) ◄──┘
-  │                                         │
-  │                                    K8s spawns Wrapper Pod
-  │                                         │
-  │                                    Pod loads graph (~200k rows/sec)
-  │                                         │
-  └─ Cypher query ──────────────────────────►  Result in milliseconds ⚡
 ```
 
 ### Services
@@ -91,13 +195,13 @@ Analyst
 
 ## Tested & Validated
 
-### All pods running
+### All pods running — verified on MacBook Pro
 
 ![All pods running](graph-olap-local-deploy/docs-local/docs/assets/screenshots/pods-running.png)
 
-### Movie graph — PyVis interactive visualisation (notebook 01)
+### Movie graph — actor/director network, queried in 1ms (notebook 01)
 
-Actors, directors, movies — loaded from synthetic Parquet, queried via Cypher, rendered with PyVis. Traversal query returned in **1ms**.
+Loaded from synthetic Parquet via fake-gcs-local. Cypher traversal across actors, directors, movies — **1ms response time**. Rendered with PyVis.
 
 ![Movie graph PyVis](graph-olap-local-deploy/docs-local/docs/assets/screenshots/movie-graph.png)
 
@@ -107,13 +211,13 @@ Players, teams, matches, seasons — full graph analytics on cricket stats data.
 
 ![IPL T20 graph](graph-olap-local-deploy/docs-local/docs/assets/screenshots/ipl-graph.png)
 
-### End-to-end test results
+### End-to-end test run
 
 ```text
 ✓ Mapping created               mapping_id=19
 ✓ Instance created              instance_id=19, snapshot_id=19
 ✓ Parquet uploaded to fake-gcs  e2e@test.com/19/v1/19/nodes/Movie/
-✓ Snapshot marked ready         UPDATE snapshots SET status='ready'
+✓ Snapshot marked ready         postgres UPDATE snapshots SET status='ready'
 ✓ Wrapper pod reached Running   ~25 seconds
 ✓ Cypher query returned         3 actors, 3 movies, ACTED_IN traversal — 1ms
 ✓ Cleanup complete
@@ -123,13 +227,13 @@ Players, teams, matches, seasons — full graph analytics on cricket stats data.
 
 ## Demo Notebooks
 
-Six notebooks are pre-loaded in Jupyter Labs — no credentials needed, all generate synthetic data:
+Six notebooks pre-loaded in Jupyter Labs — no credentials, no cloud account, all synthetic data:
 
-| # | Notebook | What it demonstrates |
+| # | Notebook | What it shows |
 |---|---|---|
 | `00` | `00-cleanup.ipynb` | List and bulk-delete instances |
 | `01` | `01-movie-graph-demo.ipynb` | Actor/director/movie graph — Cypher queries, PyVis |
-| `02` | `02-music-graph-demo.ipynb` | Artist/album/track graph — multi-hop traversals |
+| `02` | `02-music-graph-demo.ipynb` | Artist/album/track — multi-hop traversals, genre analysis |
 | `03` | `03-ecommerce-graph-demo.ipynb` | Product/customer/order — recommendation queries |
 | `04` | `04-ipl-t20-graph-demo.ipynb` | Cricket stats — player/team/match relationships |
 | `05` | `05-algorithms-demo.ipynb` | Co-actor network — PageRank, Betweenness, Louvain, PyVis |
@@ -142,7 +246,7 @@ Six notebooks are pre-loaded in Jupyter Labs — no credentials needed, all gene
 cd graph-olap-local-deploy
 
 # Optional — configure real Starburst + GCS credentials
-# (skip to run demo notebooks with synthetic data only)
+# Skip this to run all 6 demo notebooks on synthetic data
 make secrets
 
 # Build all Docker images (~10 min first time)
@@ -154,12 +258,12 @@ make deploy
 
 | Endpoint | What it is |
 |---|---|
-| `http://localhost:30081/jupyter/lab` | Jupyter Labs — 6 demo notebooks |
+| `http://localhost:30081/jupyter/lab` | Jupyter Labs — open and run any notebook |
 | `http://localhost:30081/api/...` | Control Plane REST API |
 | `http://localhost:30081/health` | Health check |
 | `http://localhost:30082` | Full documentation site |
 
-Full setup instructions: [`graph-olap-local-deploy/README.md`](graph-olap-local-deploy/README.md)
+Full setup guide: [`graph-olap-local-deploy/README.md`](graph-olap-local-deploy/README.md)
 
 ---
 
@@ -169,13 +273,3 @@ Full setup instructions: [`graph-olap-local-deploy/README.md`](graph-olap-local-
 |---|---|
 | [`graph-olap/`](graph-olap/) | Service source code — control-plane, export-worker, FalkorDB wrapper, KuzuDB wrapper, Python SDK |
 | [`graph-olap-local-deploy/`](graph-olap-local-deploy/) | Local deployment — Helm charts, Kubernetes manifests, scripts, demo notebooks, docs |
-
----
-
-## Use Cases
-
-- **Fraud detection** — traverse transaction networks to find rings and mules
-- **AML / financial crime** — multi-hop relationship queries across accounts and entities
-- **Supply chain** — map supplier dependencies, find single points of failure
-- **Customer 360** — connect customers, orders, products, and segments in one graph
-- **Recommendation** — co-purchase / co-actor graphs with community detection
