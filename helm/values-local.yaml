@@ -15,7 +15,7 @@
 
 global:
   imageRegistry: ""
-  gcpProject: "your-gcp-project-id"
+  gcpProject: "testcicd-436812"
   environment: "development"
 
 # -----------------------------------------------------------------------------
@@ -54,9 +54,10 @@ control-plane:
     host: "0.0.0.0"
     port: "8080"
     debug: "true"
-    gcpProject: "your-gcp-project-id"
+    gcpProject: "testcicd-436812"
     gcs:
-      bucket: "your-gcs-bucket"
+      bucket: "graph-olap-local-dev"
+      storageEmulatorHost: "http://fake-gcs-local:4443"
     k8s:
       namespace: "graph-olap-local"
       inCluster: "true"
@@ -69,12 +70,12 @@ control-plane:
       ingressClass: "nginx"
       gcpSecret: "gcp-sa-key"
     extensionServer:
-      url: "http://extension-server:80"
+      url: "https://free-cluster-harshagraph.trino.galaxy.starburst.io:443"
     starburst:
-      url: "https://your-cluster.trino.galaxy.starburst.io:443"
+      url: "https://free-cluster-harshagraph.trino.galaxy.starburst.io:443"
       catalog: "tpch"
       timeoutSeconds: "120"
-      user: "your-starburst-user@your-org/accountadmin"
+      user: "b4uharsha@harshagraph.galaxy.starburst.io"
     jobs:
       reconciliationIntervalSeconds: "10"
       lifecycleIntervalSeconds: "10"
@@ -159,16 +160,16 @@ export-worker:
       key: "GRAPH_OLAP_INTERNAL_API_KEY"
 
   config:
-    gcpProject: "your-gcp-project-id"
+    gcpProject: "testcicd-436812"
     starburst:
-      url: "https://your-cluster.trino.galaxy.starburst.io:443"
+      url: "https://free-cluster-harshagraph.trino.galaxy.starburst.io:443"
       catalog: "tpch"
       schema: "tiny"
       requestTimeoutSeconds: "30"
       clientTags: "graph-olap-export"
       source: "graph-olap-export-worker"
     controlPlane:
-      url: "http://graph-olap-control-plane:8080"
+      url: "https://free-cluster-harshagraph.trino.galaxy.starburst.io:443"
       timeoutSeconds: "30"
       maxRetries: "5"
     worker:
@@ -196,7 +197,9 @@ export-worker:
     - name: GOOGLE_APPLICATION_CREDENTIALS
       value: "/var/secrets/google/key.json"
     - name: GCS_BUCKET
-      value: "your-gcs-bucket"
+      value: "graph-olap-local-dev"
+    - name: STORAGE_EMULATOR_HOST
+      value: "http://fake-gcs-local:4443"
 
   resources:
     requests:
@@ -263,7 +266,7 @@ extensionServer:
 # OAuth2 Proxy - JWT validation at the nginx ingress edge
 # -----------------------------------------------------------------------------
 oauth2Proxy:
-  enabled: true
+  enabled: false
   image:
     repository: quay.io/oauth2-proxy/oauth2-proxy
     tag: "v7.6.0"

@@ -20,6 +20,15 @@ RUN pip install --no-cache-dir \
         "/tmp/graph-olap-sdk[all]" && \
     rm -rf /tmp/graph-olap-schemas /tmp/graph-olap-sdk
 
+# Extra packages needed by local demo notebooks
+RUN pip install --no-cache-dir \
+        psycopg2-binary \
+        networkx \
+        scipy \
+        pyvis \
+        python-louvain \
+        pyarrow
+
 ENV JUPYTER_ENABLE_LAB=yes \
     GRAPH_OLAP_URL="http://control-plane:8080"
 

@@ -12,7 +12,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_DEPLOY_DIR="$(dirname "$SCRIPT_DIR")"
-MONOREPO_ROOT="${MONOREPO_ROOT:-$LOCAL_DEPLOY_DIR/../../graph-olap}"
+
+# If MONOREPO_ROOT is not set, or set to a non-existent path, try the default sibling path
+if [[ -z "${MONOREPO_ROOT:-}" ]] || [[ ! -d "$MONOREPO_ROOT" ]]; then
+    MONOREPO_ROOT="$LOCAL_DEPLOY_DIR/../graph-olap"
+fi
+
 MONOREPO_ROOT="$(cd "$MONOREPO_ROOT" && pwd)"
 NAMESPACE="${NAMESPACE:-graph-olap-local}"
 
@@ -65,7 +70,7 @@ validate() {
     # Ensure all images are loaded into OrbStack's daemon (K8s uses it)
     if [[ -S "$orbstack_sock" ]]; then
         info "Syncing images to OrbStack daemon..."
-        for img in control-plane:latest export-worker:latest falkordb-wrapper:latest ryugraph-wrapper:latest documentation:latest jupyter-labs:latest ryugraph-wrapper:local falkordb-wrapper:local; do
+        for img in control-plane:latest export-worker:latest falkordb-wrapper:latest ryugraph-wrapper:latest documentation:latest jupyter-labs:latest e2e-tests:latest ryugraph-wrapper:local falkordb-wrapper:local; do
             if docker inspect "$img" &>/dev/null && \
                ! docker -H "unix://$orbstack_sock" inspect "$img" &>/dev/null 2>/dev/null; then
                 info "  Loading $img → OrbStack"
@@ -123,10 +128,13 @@ deploy_infra() {
         ok "GCP SA key secret created (real GCS access enabled)"
     elif ! kubectl get secret gcp-sa-key -n "$NAMESPACE" &>/dev/null; then
         info "Creating placeholder gcp-sa-key secret (GCS access disabled)..."
+        # Placeholder must have a valid 'type' field — google.auth rejects bare {}
+        # authorized_user type requires no RSA key and won't crash at load time.
+        # STORAGE_EMULATOR_HOST routes all GCS traffic to fake-gcs-local anyway.
         kubectl create secret generic gcp-sa-key \
-            --from-literal=key.json='{}' \
+            --from-literal=key.json='{"type":"authorized_user","client_id":"local","client_secret":"local","refresh_token":"local"}' \
             -n "$NAMESPACE"
-        warn "GCS access disabled — set GCP_SA_KEY_JSON to enable real GCS"
+        warn "GCS routed to fake-gcs-local (STORAGE_EMULATOR_HOST=http://fake-gcs-local:4443)"
     else
         info "gcp-sa-key secret already exists — skipping"
     fi
@@ -191,7 +199,43 @@ deploy_ingress_routes() {
     kubectl apply -f "$K8S_DIR/control-plane-ingress.yaml" 2>/dev/null || true
     # Deploy fake-gcs-server for local GCS emulation (used by export-worker)
     kubectl apply -f "$K8S_DIR/fake-gcs-server.yaml" 2>/dev/null || true
+    # Deploy local setup docs site (port 30082)
+    kubectl apply -f "$K8S_DIR/local-docs.yaml" 2>/dev/null || true
     ok "Ingress routes applied"
+}
+
+init_fake_gcs_bucket() {
+    info "Initializing fake-GCS bucket 'graph-olap-local-dev'..."
+
+    # Wait up to 30s for the fake-gcs pod to be Running
+    local pod=""
+    local i
+    for i in $(seq 1 15); do
+        pod=$(kubectl get pods -n "$NAMESPACE" -l app=fake-gcs-local \
+            --no-headers 2>/dev/null | grep Running | awk '{print $1}' | head -1 || true)
+        [[ -n "$pod" ]] && break
+        sleep 2
+    done
+
+    if [[ -z "$pod" ]]; then
+        warn "fake-gcs pod not ready — bucket will be created on first notebook run"
+        return 0
+    fi
+
+    # Create bucket via GCS JSON API (409 = already exists, both are fine)
+    local status
+    status=$(kubectl exec -n "$NAMESPACE" "$pod" -- \
+        wget -q -S -O /dev/null \
+             --post-data='{"name":"graph-olap-local-dev"}' \
+             --header='Content-Type: application/json' \
+             'http://localhost:4443/storage/v1/b' 2>&1 \
+        | { grep "HTTP/" || true; } | awk '{print $2}' | head -1 || echo "0")
+
+    if [[ "$status" == "200" || "$status" == "201" || "$status" == "409" ]]; then
+        ok "GCS bucket 'graph-olap-local-dev' ready (status $status)"
+    else
+        warn "Bucket creation returned status $status — notebooks will create it on demand"
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -224,16 +268,11 @@ deploy_jupyter() {
 # Phase 5: copy demo notebook into Jupyter pod
 # ---------------------------------------------------------------------------
 
-copy_demo_notebook() {
-    local notebook_src="$LOCAL_DEPLOY_DIR/notebooks/graph-olap-demo.ipynb"
-    if [[ ! -f "$notebook_src" ]]; then
-        return 0
-    fi
-
-    info "Phase 5/5: Copying demo notebook to Jupyter pod..."
+copy_demo_notebooks() {
+    info "Phase 5/5: Copying demo notebooks to Jupyter pod..."
 
     local jupyter_pod
-    jupyter_pod=$(kubectl get pods -n "$NAMESPACE" -l app=jupyterlab \
+    jupyter_pod=$(kubectl get pods -n "$NAMESPACE" -l app=jupyter-labs \
         --no-headers -o custom-columns=':metadata.name' 2>/dev/null | head -1)
 
     if [[ -z "$jupyter_pod" ]]; then
@@ -241,8 +280,31 @@ copy_demo_notebook() {
         return 0
     fi
 
-    kubectl cp "$notebook_src" "$NAMESPACE/$jupyter_pod:/home/jovyan/work/graph-olap-demo.ipynb"
-    ok "Demo notebook ready: http://localhost:30081/jupyter/lab/tree/graph-olap-demo.ipynb"
+    local notebooks=(
+        "00-cleanup.ipynb"
+        "01-movie-graph-demo.ipynb"
+        "02-music-graph-demo.ipynb"
+        "03-ecommerce-graph-demo.ipynb"
+        "04-ipl-t20-graph-demo.ipynb"
+        "05-algorithms-demo.ipynb"
+    )
+
+    for nb in "${notebooks[@]}"; do
+        local src="$LOCAL_DEPLOY_DIR/notebooks/$nb"
+        if [[ -f "$src" ]]; then
+            kubectl cp "$src" "$NAMESPACE/$jupyter_pod:/home/jovyan/work/$nb"
+            ok "  Copied: $nb"
+        fi
+    done
+
+    # Copy the SDK helper module so all notebooks can import it
+    local sdk="$LOCAL_DEPLOY_DIR/notebooks/graph_olap_sdk.py"
+    if [[ -f "$sdk" ]]; then
+        kubectl cp "$sdk" "$NAMESPACE/$jupyter_pod:/home/jovyan/work/graph_olap_sdk.py"
+        ok "  Copied: graph_olap_sdk.py"
+    fi
+
+    ok "Demo notebooks ready: http://localhost:30081/jupyter/lab"
 }
 
 # ---------------------------------------------------------------------------
@@ -290,9 +352,11 @@ main() {
     echo ""
     deploy_ingress_routes
     echo ""
+    init_fake_gcs_bucket
+    echo ""
     deploy_jupyter
     echo ""
-    copy_demo_notebook
+    copy_demo_notebooks
     echo ""
     health_check
 

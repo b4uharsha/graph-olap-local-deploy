@@ -48,7 +48,7 @@ else
 fi
 
 # Monorepo root (caller sets MONOREPO_ROOT or we check the default)
-MONOREPO_ROOT="${MONOREPO_ROOT:-../../graph-olap}"
+MONOREPO_ROOT="${MONOREPO_ROOT:-../graph-olap}"
 if [[ -d "$MONOREPO_ROOT/packages/control-plane" ]]; then
     ok "Monorepo found at $MONOREPO_ROOT"
 else

@@ -20,7 +20,7 @@ spec:
                   number: 3000
 
 ---
-# API Ingress - Requires Authentication (JWT via OAuth2-proxy)
+# API Ingress - No authentication (local development)
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -28,8 +28,6 @@ metadata:
   namespace: graph-olap-local
   annotations:
     nginx.ingress.kubernetes.io/use-regex: "true"
-    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy.graph-olap-local.svc.cluster.local/oauth2/auth"
-    nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-Email,X-Auth-Request-User"
 spec:
   ingressClassName: nginx
   rules:

@@ -10,7 +10,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_DEPLOY_DIR="$(dirname "$SCRIPT_DIR")"
-MONOREPO_ROOT="${MONOREPO_ROOT:-$LOCAL_DEPLOY_DIR/../../graph-olap}"
+# Default: sibling directory (both repos under the same parent folder)
+if [[ -z "${MONOREPO_ROOT:-}" ]] || [[ ! -d "${MONOREPO_ROOT:-}" ]]; then
+    MONOREPO_ROOT="$LOCAL_DEPLOY_DIR/../graph-olap"
+fi
 MONOREPO_ROOT="$(cd "$MONOREPO_ROOT" && pwd)"
 DOCKERFILE_DIR="$LOCAL_DEPLOY_DIR/docker"
 
@@ -20,7 +23,7 @@ ok()      { echo -e "${GREEN}[OK]${NC}    $1"; }
 error()   { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
 # All services (bash 3 compatible — no associative arrays)
-ALL_SERVICES="control-plane export-worker falkordb-wrapper ryugraph-wrapper documentation jupyter-labs"
+ALL_SERVICES="control-plane export-worker falkordb-wrapper ryugraph-wrapper documentation local-docs jupyter-labs e2e-tests"
 
 # Map service name → Dockerfile (bash 3 compatible case statement)
 get_dockerfile() {
@@ -30,7 +33,9 @@ get_dockerfile() {
         falkordb-wrapper)  echo "falkordb-wrapper.Dockerfile" ;;
         ryugraph-wrapper)  echo "ryugraph-wrapper.Dockerfile" ;;
         documentation)     echo "documentation.Dockerfile" ;;
+        local-docs)        echo "local-docs.Dockerfile" ;;
         jupyter-labs)      echo "jupyter-labs.Dockerfile" ;;
+        e2e-tests)         echo "e2e-tests.Dockerfile" ;;
         *) echo "" ;;
     esac
 }
@@ -80,7 +85,7 @@ load_image_if_needed() {
             ;;
         kind)
             local cluster
-            cluster=$(kubectl config current-context | sed 's/^kind-//')
+            cluster=$(kubectl config current-context 2>/dev/null | sed 's/^kind-//' || echo "unknown")
             info "Loading $image into kind cluster '$cluster'..."
             kind load docker-image "$image" --name "$cluster"
             ;;
@@ -118,12 +123,19 @@ build_service() {
     fi
 
     info "$svc → $image"
+
+    # local-docs uses local-deploy/ as its build context (self-contained, no monorepo needed)
+    local build_context="$MONOREPO_ROOT"
+    if [[ "$svc" == "local-docs" ]]; then
+        build_context="$LOCAL_DEPLOY_DIR"
+    fi
+
     # Explicit || return 1: bash disables set -e inside functions called from an
     # "if" condition, so a failing docker build would otherwise be silently ignored.
     docker build \
         --file "$DOCKERFILE_DIR/$dockerfile" \
         --tag "$image" \
-        "$MONOREPO_ROOT" || return 1
+        "$build_context" || return 1
 
     # Also tag wrapper images as :local — the control-plane rejects :latest tags
     # when spawning graph instance pods (safety check for reproducibility).
