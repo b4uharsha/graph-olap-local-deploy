@@ -4,6 +4,41 @@
 
 ---
 
+## Two concepts — explained simply
+
+### What is OLAP?
+
+OLAP stands for **Online Analytical Processing**. It is just a fancy term for "asking questions about large amounts of historical data."
+
+Your company stores everything in a data warehouse — sales, transactions, customers, logs. OLAP is how analysts query that data to find patterns: revenue by region, churn by cohort, fraud by account type.
+
+The key idea: **OLAP is read-only, analytical, and runs on large datasets.** It is the opposite of OLTP (Online Transaction Processing), which handles live writes like "process this payment right now."
+
+Tools you may have heard of that do OLAP: Snowflake, BigQuery, Redshift, Databricks, Starburst.
+
+### What is a Graph?
+
+A graph is a way of representing **things and the connections between them**.
+
+- A **node** is a thing: a person, an account, a product, a city
+- An **edge** is a connection: `Alice KNOWS Bob`, `Account_A TRANSFERRED_TO Account_B`, `Product_X BOUGHT_WITH Product_Y`
+
+Graphs are not charts or visualisations — they are a data structure. The reason graphs are powerful is that some questions are fundamentally about relationships, not about individual rows:
+
+- "Who is connected to this fraud suspect, and through how many hops?"
+- "Which products are always bought together?"
+- "What is the shortest path between two people in this organisation?"
+
+These questions are natural in a graph. In a relational table, they require multiple self-joins that get exponentially slower with each hop.
+
+### So what is Graph OLAP?
+
+It is the combination: **analytical queries on connected data, at warehouse scale, without waiting minutes for SQL joins.**
+
+You already have your data in a warehouse. Graph OLAP lets you take a slice of that data and ask relationship questions against it interactively — in milliseconds — without moving your warehouse or hiring a graph database team.
+
+---
+
 ## What is this, in plain English?
 
 Imagine you work at a bank. You have millions of rows of transactions in a data warehouse. Your job is to find fraud — specifically, to find groups of accounts that are secretly connected through shared devices, shared addresses, or circular money transfers.
