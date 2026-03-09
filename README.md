@@ -154,42 +154,84 @@ It partly does — but with significant gaps:
 ## Architecture
 
 ```text
-http://localhost:30081
-        │
-        ▼
-nginx Ingress (NodePort 30081)
-        │
-        ├── /api/*      →  Control Plane (FastAPI)   ─── PostgreSQL
-        ├── /jupyter    →  Jupyter Labs               ─── 6 demo notebooks
-        └── /health     →  Health check
-
-Control Plane ──────────────────────────────────────────────────────────
-  Manages mappings, snapshots, instances, users
-  Calls Kubernetes API to spawn / delete wrapper pods
-  Reconciliation loop every ~30s
-
-Export Worker ───────────────────────────────────────────────────────────
-  Polls for export jobs → runs UNLOAD on Starburst Galaxy
-  Writes Parquet files to GCS (or fake-gcs-local in local mode)
-
-Wrapper Pod (one per analyst instance) ──────────────────────────────────
-  FalkorDB (Redis-based) or KuzuDB (columnar) — chosen per instance
-  Downloads Parquet from GCS on startup, loads at ~200k rows/sec
-  Accepts Cypher queries directly — fully in-memory, sub-millisecond
+┌─────────────────────────────────────────────────────────────────┐
+│                    localhost:30081 (nginx ingress)               │
+│                                                                  │
+│   /api/*    ──►  Control Plane (FastAPI + Python)                │
+│   /jupyter  ──►  Jupyter Labs                                    │
+│   /health   ──►  Health check                                    │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+          ┌────────────▼─────────────┐
+          │      Control Plane        │  FastAPI · Python
+          │  - REST API               │  Manages: mappings, snapshots,
+          │  - Kubernetes API client  │  instances, users
+          │  - Reconciliation loop    │  Spawns/deletes wrapper pods
+          └──────┬──────────┬────────┘
+                 │          │
+    ┌────────────▼──┐  ┌────▼──────────────────┐
+    │  PostgreSQL   │  │    Export Worker       │  Python
+    │  (metadata)   │  │  Polls export jobs     │
+    │  mappings     │  │  → Starburst UNLOAD    │
+    │  snapshots    │  │  → Parquet to GCS      │
+    │  instances    │  └────────────────────────┘
+    └───────────────┘            │
+                                 │ Parquet files
+                       ┌─────────▼──────────┐
+                       │  GCS / fake-gcs    │  Cloud Storage
+                       │  (Parquet store)   │  or local emulator
+                       └─────────┬──────────┘
+                                 │ Download on startup
+          ┌──────────────────────▼──────────────────────┐
+          │        Wrapper Pod  (one per analyst)        │
+          │                                              │
+          │   ┌──────────────┐  or  ┌─────────────────┐ │
+          │   │   FalkorDB   │      │     KuzuDB       │ │
+          │   │  Redis-based │      │  Columnar graph  │ │
+          │   │  fast lookup │      │  algorithms+scan │ │
+          │   └──────────────┘      └─────────────────┘ │
+          │                                              │
+          │   Cypher query → result in milliseconds ⚡   │
+          └──────────────────────────────────────────────┘
 ```
+
+### Technology Stack
+
+| Layer | Technology | Why |
+|---|---|---|
+| **API** | FastAPI (Python) | Async REST, lightweight, easy to extend |
+| **Graph engine — option A** | [FalkorDB](https://falkordb.com) | Redis-based in-memory graph. Fastest for point lookups and short traversals. OpenCypher query language. |
+| **Graph engine — option B** | [KuzuDB](https://kuzudb.com) | Columnar graph database. Better for full graph scans, large datasets, and algorithm workloads (PageRank, BFS, Louvain). |
+| **Data format** | Apache Parquet | Columnar, compressed, fast to load. Warehouse-native — every major warehouse can UNLOAD to Parquet. |
+| **Warehouse** | Starburst Galaxy (Trino) | SQL query engine over any warehouse. UNLOAD to GCS. Optional — bypassed in local mode. |
+| **Storage** | Google Cloud Storage | Durable Parquet store. fake-gcs-local emulates it locally — no GCP account needed for dev. |
+| **Orchestration** | Kubernetes | Spawns/deletes wrapper pods on demand. Works on OrbStack, Docker Desktop, minikube, or any K8s cluster. |
+| **Packaging** | Helm | Same charts for local dev and production. |
+| **Notebooks** | Jupyter Labs | Pre-loaded with Python SDK and 6 demo notebooks. |
+| **Algorithms** | NetworkX + Extension Server | PageRank, Betweenness Centrality, Louvain community detection, BFS, Shortest Path. |
+
+### FalkorDB vs KuzuDB — which to pick?
+
+| | FalkorDB | KuzuDB (Ryugraph) |
+|---|---|---|
+| Best for | Fast lookups, short traversals, low latency | Large scans, graph algorithms, analytical queries |
+| Memory model | Redis structures | Columnar (like Parquet in memory) |
+| PageRank / BFS | Via Extension Server | Native |
+| Query language | OpenCypher | Cypher |
+| Choose when | You need speed on a focused subgraph | You need algorithms across the whole graph |
 
 ### Services
 
-| Service | Role | Image |
-|---|---|---|
-| **Control Plane** | REST API — orchestrates everything via K8s API | `control-plane:latest` |
-| **Export Worker** | Runs Starburst UNLOAD jobs, writes Parquet to GCS | `export-worker:latest` |
-| **FalkorDB Wrapper** | In-memory graph pod (Redis-based) — fast lookups | `falkordb-wrapper:local` |
-| **Ryugraph Wrapper** | In-memory graph pod (KuzuDB) — large scans + algorithms | `ryugraph-wrapper:local` |
-| **Jupyter Labs** | Notebook environment with SDK + 6 demo notebooks | `jupyter-labs:latest` |
-| **PostgreSQL** | Control plane database | `postgres:15-alpine` |
-| **Extension Server** | Graph algorithm extensions (PageRank, BFS, Louvain) | `extension-server` |
-| **Fake GCS Server** | Local GCS emulator — no real GCP account needed | `fake-gcs-server` |
+| Service | Role |
+|---|---|
+| **Control Plane** | REST API — manages everything, calls K8s API to spawn/delete pods |
+| **Export Worker** | Runs Starburst UNLOAD jobs, writes Parquet to GCS |
+| **FalkorDB Wrapper** | Wrapper pod using FalkorDB — one spawned per analyst instance |
+| **Ryugraph Wrapper** | Wrapper pod using KuzuDB — chosen when algorithms are needed |
+| **Jupyter Labs** | Notebook environment with Python SDK + 6 demo notebooks pre-loaded |
+| **PostgreSQL** | Stores mappings, snapshots, instances, users |
+| **Extension Server** | Provides graph algorithm extensions to wrapper pods |
+| **Fake GCS Server** | In-cluster GCS emulator — zero cloud setup needed locally |
 
 ---
 
