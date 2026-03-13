@@ -170,6 +170,8 @@ The full platform has been verified end-to-end on a local laptop. All pods runni
 
 All notebooks run without any cloud credentials — they use a local GCS emulator and synthetic data.
 
+![IPL T20 Graph — players, teams, and venues rendered as an interactive PyVis graph](graph-olap-local-deploy/docs-local/docs/assets/screenshots/ipl-graph.png)
+
 ---
 
 ## Also Deployed to Production
