@@ -178,7 +178,7 @@ Beyond the local laptop demo, the platform is running in production on **Google 
 
 - All services deployed and running in a dedicated GKE cluster
 - CI/CD pipeline fully automated — 5 images built and deployed end-to-end
-- Starburst Enterprise connected — real HSBC WPB GLH data
+- Starburst Enterprise connected — real production data
 - KEDA auto-scaling — export-worker scales to zero when idle, scales up on demand
 - Workload Identity — no service account keys anywhere, GCS accessed natively
 - Cloud SQL Auth Proxy — secure database connectivity
