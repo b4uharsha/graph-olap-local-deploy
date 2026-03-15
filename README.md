@@ -64,6 +64,13 @@ An auditor needs to trace the approval chain for sensitive system access.
 - **The old way:** Request reports from IT, wait weeks, piece together the story manually
 - **With Graph OLAP:** See the complete approval chain in one view, instantly
 
+### "Which patients are affected by this drug recall?"
+
+A pharma safety officer needs to trace every patient who received a medication from a recalled batch — through hospitals, pharmacies, and distributors.
+
+- **The old way:** Call each distributor, cross-reference spreadsheets, takes days or weeks
+- **With Graph OLAP:** Trace the complete distribution chain instantly, identify every affected patient in seconds
+
 ---
 
 ## Why This Matters
@@ -182,8 +189,9 @@ The graph version reads almost like English: *"Find accounts connected through 1
 | Industry | Example Question | Time Saved |
 |----------|------------------|------------|
 | **Banking & Finance** | "Which accounts are connected to this fraud suspect?" | Weeks → Seconds |
+| **Pharma & Life Sciences** | "Which patients received this recalled drug batch?" | Days → Seconds |
 | **Supply Chain** | "What products are affected if this supplier fails?" | Days → Instant |
-| **Healthcare** | "Which patients received medications from this recalled batch?" | Hours → Seconds |
+| **Healthcare** | "Which doctors prescribed medications to this patient network?" | Hours → Seconds |
 | **Retail** | "What else do customers like this one typically buy?" | Complex analysis → Simple query |
 | **IT & Security** | "How did this user get access to this sensitive system?" | Manual audit → Instant trace |
 | **HR & Compliance** | "Who reports to whom, and who approved each hire?" | Spreadsheet diving → Visual answer |
