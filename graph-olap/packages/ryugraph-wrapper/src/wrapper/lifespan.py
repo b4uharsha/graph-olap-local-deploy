@@ -70,15 +70,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     lock_service: LockService | None = None
     metrics_task: asyncio.Task[None] | None = None
 
+    # Standalone/canary mode: no instance_id means this is a static deployment
+    # for image/config validation — skip control-plane registration and data loading
+    standalone = not settings.wrapper.instance_id
+
     try:
         # Mark startup time
         set_startup_time()
 
         logger.info(
             "Starting Ryugraph Wrapper",
-            instance_id=settings.wrapper.instance_id,
-            snapshot_id=settings.wrapper.snapshot_id,
+            instance_id=settings.wrapper.instance_id or "(standalone)",
+            snapshot_id=settings.wrapper.snapshot_id or "(standalone)",
+            standalone=standalone,
         )
+
+        if standalone:
+            logger.info(
+                "Running in standalone/canary mode — health endpoint only, "
+                "no control-plane registration or data loading. "
+                "Set WRAPPER_INSTANCE_ID to enable full mode."
+            )
+            yield
+            return
 
         # =====================================================================
         # Initialize Control Plane Client

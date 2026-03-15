@@ -33,6 +33,15 @@ def create_engine_for_settings(settings: Settings) -> AsyncEngine:
     """
     url = settings.async_database_url
 
+    # GKE/Cloud SQL Proxy Configuration:
+    # When using Cloud SQL Auth Proxy, connections go through a local proxy that
+    # handles its own TLS encryption to Cloud SQL. The local socket (127.0.0.1 or
+    # localhost) must be plain TCP - attempting SSL on this connection will fail.
+    # This is safe because Cloud SQL Auth Proxy provides end-to-end encryption.
+    connect_args = {}
+    if "127.0.0.1" in url or "localhost" in url:
+        connect_args["ssl"] = False
+
     # PostgreSQL configuration with connection pooling
     return create_async_engine(
         url,
@@ -41,6 +50,7 @@ def create_engine_for_settings(settings: Settings) -> AsyncEngine:
         max_overflow=settings.db_max_overflow,
         pool_pre_ping=True,
         pool_recycle=3600,  # Recycle connections after 1 hour
+        connect_args=connect_args,
     )
 
 

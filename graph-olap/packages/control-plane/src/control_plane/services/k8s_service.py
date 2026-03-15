@@ -185,8 +185,12 @@ class K8sService:
         # Get wrapper-specific configuration from factory
         wrapper_config = self._wrapper_factory.get_wrapper_config(wrapper_type)
 
-        # Determine instance URL: prefer external ingress URL (for LOCAL mode),
-        # fall back to cluster DNS (for IN_CLUSTER mode)
+        # Determine instance URL based on ingress configuration:
+        #   gce-internal → in-cluster service DNS (some enterprise environments
+        #                  don't support wildcard DNS, so wrappers are accessed
+        #                  via Kubernetes service DNS instead of external URLs)
+        #   nginx/traefik → external ingress URL via base URL
+        #   no base URL    → bare cluster service DNS (local dev fallback)
         instance_url = (
             self.get_external_instance_url(url_slug)
             if self._external_base_url
@@ -226,7 +230,9 @@ class K8sService:
                             {"name": "WRAPPER_MAPPING_VERSION", "value": str(mapping_version)},
                             {"name": "WRAPPER_OWNER_ID", "value": owner_username},
                             {"name": "WRAPPER_GCS_BASE_PATH", "value": gcs_path},
-                            {"name": "WRAPPER_CONTROL_PLANE_URL", "value": "http://graph-olap-control-plane:8080"},
+                            # Control plane service name - "control-plane" for GKE production,
+                            # "graph-olap-control-plane" for local k3d/development
+                            {"name": "WRAPPER_CONTROL_PLANE_URL", "value": "http://control-plane:8080"},
                             {"name": "WRAPPER_INSTANCE_URL", "value": instance_url},
                             {"name": "DATABASE_PATH", "value": "/data/db"},
                             {"name": "RYUGRAPH_EXTENSION_SERVER_URL", "value": self._settings.extension_server_url},
@@ -325,13 +331,31 @@ class K8sService:
             },
         }
 
+    def _get_wrapper_domain(self) -> str:
+        """Derive the bare domain for wrapper subdomains from the external base URL.
+
+        For GCE internal ingress with host-based routing, this extracts the domain
+        portion so wrappers can be accessed as: wrapper-{slug}.{domain}
+
+        Example: "https://graph-olap.my-project-123-dev.gcp.example.com"
+                 → "my-project-123-dev.gcp.example.com"
+        """
+        parsed = urlparse(self._external_base_url)
+        if parsed.hostname:
+            parts = parsed.hostname.split(".")
+            return ".".join(parts[1:]) if len(parts) > 1 else parsed.hostname
+        return ""
+
     def _build_wrapper_ingress_spec(
         self, instance_id: int, url_slug: str, wrapper_type: WrapperType
     ) -> dict[str, Any]:
         """Build Ingress spec for external access to a wrapper instance.
 
-        Uses path-based routing: /wrapper/{url_slug}/* -> wrapper-{url_slug}:8000
-        Supports both nginx and traefik ingress controllers.
+        Supports multiple ingress modes:
+          nginx: path-based routing /wrapper/{url_slug}/* with rewriting
+          gce-internal: host-based routing wrapper-{slug}.{domain}
+                       (for enterprise GKE without wildcard DNS)
+          traefik: path-based with middleware strip
 
         Args:
             instance_id: Instance ID (for labels)
@@ -369,6 +393,17 @@ class K8sService:
                 })
             path = f"/wrapper/{url_slug}(/|$)(.*)"
             path_type = "ImplementationSpecific"
+            ingress_host = urlparse(self._external_base_url).hostname if self._external_base_url else None
+        elif self._ingress_class == "gce-internal":
+            # GCE internal load balancer — host-based routing, one subdomain per wrapper.
+            # URL format: wrapper-{slug}.{domain} (e.g., wrapper-abc123.my-project.gcp.example.com)
+            # No path rewriting (GCE native LB doesn't support it); wrapper receives / directly.
+            # NEG annotation on the Service enables container-native load balancing.
+            annotations = {}
+            domain = self._get_wrapper_domain()
+            ingress_host = f"wrapper-{url_slug}.{domain}" if domain else None
+            path = "/"
+            path_type = "Prefix"
         else:
             # Traefik (default in k3d)
             annotations = {
@@ -376,15 +411,7 @@ class K8sService:
             }
             path = f"/wrapper/{url_slug}"
             path_type = "Prefix"
-
-        # Extract host from external base URL for proper ingress routing
-        # Without a host, path-based ingresses lose to host-specific catch-all rules
-        # Use parsed.hostname (not netloc) to strip port - RFC 1123 doesn't allow colons
-        ingress_host = None
-        if self._external_base_url:
-            parsed = urlparse(self._external_base_url)
-            if parsed.hostname:
-                ingress_host = parsed.hostname
+            ingress_host = urlparse(self._external_base_url).hostname if self._external_base_url else None
 
         # Build ingress rule with optional host
         rule: dict[str, Any] = {
@@ -428,12 +455,21 @@ class K8sService:
     def get_external_instance_url(self, url_slug: str) -> str | None:
         """Get the external URL for accessing a wrapper instance.
 
+        For gce-internal: in-cluster service DNS (enterprise environments without
+                         wildcard DNS use Kubernetes service DNS instead)
+        For nginx/traefik: path-based URL on the shared base host
+
         Args:
             url_slug: UUID slug for URL routing
 
         Returns:
             External URL if configured, None otherwise
         """
+        if self._ingress_class == "gce-internal":
+            # Enterprise GKE environments may not have wildcard DNS configured.
+            # Use in-cluster service DNS — works for kubectl exec based clients
+            # and any in-cluster consumer. Service name matches wrapper-{url_slug}.
+            return f"http://wrapper-{url_slug}.{self._namespace}.svc.cluster.local:8000"
         if not self._external_base_url:
             return None
         return f"{self._external_base_url.rstrip('/')}/wrapper/{url_slug}"
@@ -454,6 +490,13 @@ class K8sService:
         service_name = f"wrapper-{url_slug}"
         app_label = f"{wrapper_type.value}-wrapper"
 
+        # For GCE internal ingress, enable container-native load balancing via NEG
+        # (Network Endpoint Group). Without this annotation, GCE falls back to
+        # iptables NodePort mode which is unreliable for dynamically created pods.
+        service_annotations: dict[str, str] = {}
+        if self._ingress_class == "gce-internal":
+            service_annotations["cloud.google.com/neg"] = '{"ingress": true}'
+
         return {
             "apiVersion": "v1",
             "kind": "Service",
@@ -465,6 +508,7 @@ class K8sService:
                     "url-slug": url_slug,
                     "wrapper-type": wrapper_type.value,
                 },
+                "annotations": service_annotations,
             },
             "spec": {
                 "selector": {
@@ -545,9 +589,11 @@ class K8sService:
                 logger.error("k8s_service_creation_failed", service_name=service_name, error=str(e))
                 # Continue anyway - pod might still work via IP
 
-        # Create Ingress for external access (if external URL is configured)
+        # Create Ingress for external access
+        # For gce-internal: skip ingress creation — enterprise environments without
+        # wildcard DNS use in-cluster service DNS (wrapper-{slug}.{namespace}.svc.cluster.local)
         external_url = None
-        if self._external_base_url and self._networking_api:
+        if self._ingress_class != "gce-internal" and self._external_base_url and self._networking_api:
             try:
                 ingress_spec = self._build_wrapper_ingress_spec(instance_id, url_slug, wrapper_type)
                 self._networking_api.create_namespaced_ingress(

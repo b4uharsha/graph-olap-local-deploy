@@ -69,35 +69,43 @@ class StarburstClient:
         self,
         url: str,
         user: str,
-        password: str,
+        password: str = "",
         catalog: str = "bigquery",
         schema: str = "public",
         request_timeout: int = 30,
         client_tags: list[str] | None = None,
         source: str = "graph-olap-export-worker",
         gcp_project: str | None = None,
+        role: str | None = None,
+        ssl_verify: bool = True,
     ) -> None:
         """Initialize Starburst client.
 
         Args:
             url: Starburst REST API URL
-            user: Username for authentication
-            password: Password for authentication
+            user: Username for authentication (sent as X-Trino-User header)
+            password: Password for authentication (optional — omit for header-only auth)
             catalog: Default catalog
             schema: Default schema
             request_timeout: HTTP request timeout in seconds
             client_tags: Client tags for resource group routing (ADR-025)
             source: Source identifier for Starburst queries
             gcp_project: GCP project ID for direct export (PyArrow fallback)
+            role: Starburst role to set via X-Trino-Role header (e.g. your_starburst_role)
+            ssl_verify: Verify SSL certificates (set False for self-signed certs)
         """
         self.url = url.rstrip("/")
-        self.auth = (user, password)
+        self.user = user
+        # Only use basic auth if a password is provided
+        self.auth = (user, password) if password else None
         self.catalog = catalog
         self.schema = schema
         self.request_timeout = request_timeout
         self.client_tags = client_tags or ["graph-olap-export"]
         self.source = source
         self.gcp_project = gcp_project
+        self.role = role
+        self.ssl_verify = ssl_verify
         self._logger = logger.bind(component="starburst")
 
     @classmethod
@@ -114,27 +122,71 @@ class StarburstClient:
         return cls(
             url=config.url,
             user=config.user,
-            password=config.password.get_secret_value(),
+            password=config.password.get_secret_value() if config.password else "",
             catalog=config.catalog,
             schema=config.schema_name,
             request_timeout=config.request_timeout_seconds,
             client_tags=client_tags,
             source=config.source,
             gcp_project=gcp_project,
+            role=config.role,
+            ssl_verify=config.ssl_verify,
         )
 
     def _get_headers(self, catalog: str) -> dict[str, str]:
         """Get HTTP headers for Starburst requests.
 
         Includes client_tags and source for resource group routing (ADR-025).
+        Sends X-Trino-User for header-based auth and X-Trino-Role if configured.
         """
-        return {
+        headers: dict[str, str] = {
+            "X-Trino-User": self.user,
             "X-Trino-Catalog": catalog,
             "X-Trino-Schema": self.schema,
             "X-Trino-Client-Tags": ",".join(self.client_tags),
             "X-Trino-Source": self.source,
             "Content-Type": "text/plain",
         }
+        if self.role:
+            headers["X-Trino-Role"] = self.role
+        return headers
+
+    def _set_role_sync(self, client: httpx.Client, catalog: str) -> None:
+        """Send SET ROLE statement before queries.
+
+        Some enterprise Starburst deployments require the role to be set via SQL
+        in addition to (or instead of) the X-Trino-Role header. This pattern is
+        common in environments with fine-grained RBAC.
+        """
+        if not self.role:
+            return
+
+        try:
+            response = client.post(
+                f"{self.url}/v1/statement",
+                content=f"SET ROLE {self.role}",
+                headers=self._get_headers(catalog),
+            )
+            response.raise_for_status()
+            self._logger.debug("SET ROLE completed", role=self.role)
+        except Exception as e:
+            self._logger.warning("SET ROLE failed (non-fatal)", role=self.role, error=str(e))
+
+    async def _set_role_async(self, client: httpx.AsyncClient, catalog: str) -> None:
+        """Async version of SET ROLE for async client paths."""
+        if not self.role:
+            return
+
+        try:
+            response = await client.post(
+                f"{self.url}/v1/statement",
+                content=f"SET ROLE {self.role}",
+                headers=self._get_headers(catalog),
+            )
+            response.raise_for_status()
+            self._logger.debug("SET ROLE completed (async)", role=self.role)
+        except Exception as e:
+            self._logger.warning("SET ROLE failed (non-fatal, async)", role=self.role, error=str(e))
 
     # -------------------------------------------------------------------------
     # Sync API - Used by Export Worker
@@ -181,7 +233,10 @@ class StarburstClient:
             client_tags=self.client_tags,
         )
 
-        with httpx.Client(auth=self.auth, timeout=self.request_timeout) as client:
+        with httpx.Client(auth=self.auth, timeout=self.request_timeout, verify=self.ssl_verify) as client:
+            # Set role via SQL before query (enterprise RBAC pattern)
+            self._set_role_sync(client, effective_catalog)
+
             try:
                 response = client.post(
                     f"{self.url}/v1/statement",
@@ -190,8 +245,15 @@ class StarburstClient:
                 )
                 response.raise_for_status()
             except httpx.HTTPStatusError as e:
+                body = e.response.text[:1000]
+                self._logger.error(
+                    "Starburst HTTP error on submit",
+                    status_code=e.response.status_code,
+                    response_body=body,
+                    catalog=effective_catalog,
+                )
                 raise StarburstError(
-                    f"Failed to submit query: {e.response.status_code}",
+                    f"Failed to submit query: {e.response.status_code} - {body}",
                     query=unload_query,
                 ) from e
 
@@ -238,14 +300,20 @@ class StarburstClient:
         Raises:
             StarburstError: If the poll request itself fails.
         """
-        with httpx.Client(auth=self.auth, timeout=self.request_timeout) as client:
+        with httpx.Client(auth=self.auth, timeout=self.request_timeout, verify=self.ssl_verify) as client:
             try:
                 response = client.get(next_uri)
                 response.raise_for_status()
             except httpx.RequestError as e:
                 raise StarburstError(f"Poll request failed: {e}") from e
             except httpx.HTTPStatusError as e:
-                raise StarburstError(f"Poll request failed: {e.response.status_code}") from e
+                body = e.response.text[:1000]
+                self._logger.error(
+                    "Starburst HTTP error on poll",
+                    status_code=e.response.status_code,
+                    response_body=body,
+                )
+                raise StarburstError(f"Poll request failed: {e.response.status_code} - {body}") from e
 
             result = response.json()
 
@@ -311,7 +379,10 @@ class StarburstClient:
             client_tags=self.client_tags,
         )
 
-        async with httpx.AsyncClient(auth=self.auth, timeout=self.request_timeout) as client:
+        async with httpx.AsyncClient(auth=self.auth, timeout=self.request_timeout, verify=self.ssl_verify) as client:
+            # Set role via SQL before query (enterprise RBAC pattern)
+            await self._set_role_async(client, effective_catalog)
+
             try:
                 response = await client.post(
                     f"{self.url}/v1/statement",
@@ -320,8 +391,15 @@ class StarburstClient:
                 )
                 response.raise_for_status()
             except httpx.HTTPStatusError as e:
+                body = e.response.text[:1000]
+                self._logger.error(
+                    "Starburst HTTP error on submit (async)",
+                    status_code=e.response.status_code,
+                    response_body=body,
+                    catalog=effective_catalog,
+                )
                 raise StarburstError(
-                    f"Failed to submit query: {e.response.status_code}",
+                    f"Failed to submit query: {e.response.status_code} - {body}",
                     query=unload_query,
                 ) from e
             except httpx.RequestError as e:
@@ -332,6 +410,13 @@ class StarburstClient:
             # Check for immediate error
             if "error" in result:
                 error = result["error"]
+                self._logger.error(
+                    "Starburst query error on submit (async)",
+                    error_message=error.get("message"),
+                    error_code=error.get("errorCode"),
+                    error_type=error.get("errorType"),
+                    catalog=effective_catalog,
+                )
                 raise StarburstError(
                     f"Query error: {error.get('message', 'Unknown error')}",
                     query=unload_query,
@@ -369,14 +454,20 @@ class StarburstClient:
         Raises:
             StarburstError: If the poll request itself fails.
         """
-        async with httpx.AsyncClient(auth=self.auth, timeout=self.request_timeout) as client:
+        async with httpx.AsyncClient(auth=self.auth, timeout=self.request_timeout, verify=self.ssl_verify) as client:
             try:
                 response = await client.get(next_uri)
                 response.raise_for_status()
             except httpx.RequestError as e:
                 raise StarburstError(f"Poll request failed: {e}") from e
             except httpx.HTTPStatusError as e:
-                raise StarburstError(f"Poll request failed: {e.response.status_code}") from e
+                body = e.response.text[:1000]
+                self._logger.error(
+                    "Starburst HTTP error on poll (async)",
+                    status_code=e.response.status_code,
+                    response_body=body,
+                )
+                raise StarburstError(f"Poll request failed: {e.response.status_code} - {body}") from e
 
             result = response.json()
 
@@ -448,7 +539,10 @@ class StarburstClient:
         all_data: list[list[Any]] = []
         result_columns: list[str] = []
 
-        async with httpx.AsyncClient(auth=self.auth, timeout=self.request_timeout) as client:
+        async with httpx.AsyncClient(auth=self.auth, timeout=self.request_timeout, verify=self.ssl_verify) as client:
+            # Set role via SQL before query (enterprise RBAC pattern)
+            await self._set_role_async(client, effective_catalog)
+
             # Submit query
             try:
                 response = await client.post(
@@ -458,14 +552,28 @@ class StarburstClient:
                 )
                 response.raise_for_status()
             except httpx.HTTPStatusError as e:
+                body = e.response.text[:1000]
+                self._logger.error(
+                    "Starburst HTTP error on direct export submit",
+                    status_code=e.response.status_code,
+                    response_body=body,
+                    catalog=effective_catalog,
+                )
                 raise StarburstError(
-                    f"Failed to execute query: {e.response.status_code}",
+                    f"Failed to execute query: {e.response.status_code} - {body}",
                     query=select_query,
                 ) from e
 
             result = response.json()
             if "error" in result:
                 error = result["error"]
+                self._logger.error(
+                    "Starburst query error on direct export",
+                    error_message=error.get("message"),
+                    error_code=error.get("errorCode"),
+                    error_type=error.get("errorType"),
+                    catalog=effective_catalog,
+                )
                 raise StarburstError(
                     f"Query error: {error.get('message', 'Unknown error')}",
                     query=select_query,
@@ -488,14 +596,26 @@ class StarburstClient:
                     response = await client.get(next_uri, headers=self._get_headers(effective_catalog))
                     response.raise_for_status()
                 except httpx.HTTPStatusError as e:
+                    body = e.response.text[:1000]
+                    self._logger.error(
+                        "Starburst HTTP error on direct export poll",
+                        status_code=e.response.status_code,
+                        response_body=body,
+                    )
                     raise StarburstError(
-                        f"Failed to poll query: {e.response.status_code}",
+                        f"Failed to poll query: {e.response.status_code} - {body}",
                         query=select_query,
                     ) from e
 
                 result = response.json()
                 if "error" in result:
                     error = result["error"]
+                    self._logger.error(
+                        "Starburst query failed during direct export poll",
+                        error_message=error.get("message"),
+                        error_code=error.get("errorCode"),
+                        error_type=error.get("errorType"),
+                    )
                     raise StarburstError(
                         f"Query failed: {error.get('message', 'Unknown error')}",
                         query=select_query,
@@ -644,16 +764,15 @@ SELECT * FROM TABLE(
         effective_catalog = catalog or self.catalog
         explain_query = f"DESCRIBE ({sql})"
 
-        with httpx.Client(auth=self.auth, timeout=30.0) as client:
+        with httpx.Client(auth=self.auth, timeout=self.request_timeout, verify=self.ssl_verify) as client:
+            # Set role via SQL before query (enterprise RBAC pattern)
+            self._set_role_sync(client, effective_catalog)
+
             try:
                 response = client.post(
                     f"{self.url}/v1/statement",
                     content=explain_query,
-                    headers={
-                        "X-Trino-Catalog": effective_catalog,
-                        "X-Trino-Schema": self.schema,
-                        "Content-Type": "text/plain",
-                    },
+                    headers=self._get_headers(effective_catalog),
                 )
                 response.raise_for_status()
             except httpx.HTTPStatusError as e:
@@ -677,7 +796,7 @@ SELECT * FROM TABLE(
             next_uri = result.get("nextUri")
 
             while next_uri:
-                response = client.get(next_uri, timeout=30.0)
+                response = client.get(next_uri, timeout=self.request_timeout)
                 result = response.json()
 
                 if "data" in result:

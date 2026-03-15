@@ -19,11 +19,11 @@ class WrapperConfig(BaseSettings):
         extra="ignore",
     )
 
-    # Instance identification
-    instance_id: str = Field(description="Unique instance identifier (UUID)")
-    snapshot_id: str = Field(description="Source snapshot identifier (UUID)")
-    mapping_id: str = Field(description="Parent mapping identifier (UUID)")
-    owner_id: str = Field(description="Instance owner user identifier")
+    # Instance identification (empty = standalone/canary mode — no control-plane registration)
+    instance_id: str = Field(default="", description="Unique instance identifier (UUID)")
+    snapshot_id: str = Field(default="", description="Source snapshot identifier (UUID)")
+    mapping_id: str = Field(default="", description="Parent mapping identifier (UUID)")
+    owner_id: str = Field(default="", description="Instance owner user identifier")
     owner_username: str = Field(default="unknown", description="Instance owner username")
 
     # Kubernetes pod identification (set via Downward API)
@@ -41,13 +41,15 @@ class WrapperConfig(BaseSettings):
     control_plane_url: str = Field(description="Control Plane API base URL")
     control_plane_timeout: float = Field(default=30.0, ge=1.0, description="HTTP timeout seconds")
 
-    # GCS
-    gcs_base_path: str = Field(description="GCS path to snapshot Parquet files")
+    # GCS (empty = standalone/canary mode)
+    gcs_base_path: str = Field(default="", description="GCS path to snapshot Parquet files")
 
     @field_validator("gcs_base_path")
     @classmethod
     def validate_gcs_path(cls, v: str) -> str:
-        """Ensure GCS path starts with gs://."""
+        """Ensure GCS path starts with gs:// (skip validation in standalone mode)."""
+        if not v:
+            return v
         if not v.startswith("gs://"):
             raise ValueError("gcs_base_path must start with 'gs://'")
         return v.rstrip("/")

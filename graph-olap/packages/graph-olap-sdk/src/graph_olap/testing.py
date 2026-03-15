@@ -207,6 +207,13 @@ class NotebookTest:
     def _create_client(self, persona: TestPersona) -> GraphOLAPClient:
         """Create a client for a specific persona.
 
+        Supports two authentication modes:
+          - In-cluster mode: Uses X-Username/X-User-Role headers (bypasses SAML/oauth2-proxy).
+            Enable by setting GRAPH_OLAP_IN_CLUSTER_MODE=true. Useful for kubectl exec
+            based testing inside the cluster where tokens aren't available.
+          - External mode: Uses Bearer token from environment variable. Default mode
+            for testing from outside the cluster.
+
         Args:
             persona: The test persona to create a client for
 
@@ -214,9 +221,30 @@ class NotebookTest:
             GraphOLAPClient authenticated as that persona
 
         Raises:
-            ValueError: If the API key environment variable is not set
+            ValueError: If the API key environment variable is not set (external mode)
         """
         from graph_olap.client import GraphOLAPClient
+
+        api_url = os.environ["GRAPH_OLAP_API_URL"]
+        in_cluster = os.environ.get(
+            "GRAPH_OLAP_IN_CLUSTER_MODE", ""
+        ).lower() in ("true", "1", "yes")
+
+        if in_cluster:
+            # In-cluster mode: use header-based auth (bypasses SAML/oauth2-proxy)
+            # Replace example.com with your organization's domain when deploying
+            persona_identities = {
+                TestPersona.ANALYST_ALICE: ("alice@example.com", "analyst"),
+                TestPersona.ANALYST_BOB: ("bob@example.com", "analyst"),
+                TestPersona.ADMIN_CAROL: ("carol@example.com", "admin"),
+                TestPersona.OPS_DAVE: ("dave@example.com", "ops"),
+            }
+            username, role = persona_identities[persona]
+            return GraphOLAPClient(
+                api_url=api_url,
+                username=username,
+                role=role,
+            )
 
         config = persona.value
         api_key = os.environ.get(config.env_var)
@@ -229,7 +257,7 @@ class NotebookTest:
             )
 
         return GraphOLAPClient(
-            api_url=os.environ["GRAPH_OLAP_API_URL"],
+            api_url=api_url,
             api_key=api_key,
         )
 

@@ -5,12 +5,15 @@ All sensitive values (passwords, tokens) must be provided via environment.
 
 Environment variables for K8s Export Worker (ADR-025):
 - GCP_PROJECT: GCP project ID
-- STARBURST_URL, STARBURST_USER, STARBURST_PASSWORD: Starburst auth
+- STARBURST_URL, STARBURST_USER, STARBURST_PASSWORD: Starburst auth (password optional for header-only auth)
+- STARBURST_ROLE: Starburst role for X-Trino-Role header (e.g. your_starburst_role)
+- STARBURST_SSL_VERIFY: Verify SSL certs (default: true, set false for self-signed)
 - STARBURST_CLIENT_TAGS: Client tags for resource group routing (default: graph-olap-export)
 - STARBURST_SOURCE: Source identifier (default: graph-olap-export-worker)
 - CONTROL_PLANE_URL: Control Plane internal URL
 - POLL_INTERVAL_SECONDS: Main loop interval (default: 5)
 - EMPTY_POLL_BACKOFF_SECONDS: Backoff when no work (default: 10)
+- DIRECT_EXPORT: Use direct PyArrow export instead of system.unload (default: true)
 """
 
 from __future__ import annotations
@@ -28,9 +31,10 @@ class StarburstConfig(BaseSettings):
 
     url: str = Field(description="Starburst REST API URL")
     user: str = Field(description="Starburst username")
-    password: SecretStr = Field(description="Starburst password")
+    password: SecretStr | None = Field(default=None, description="Starburst password (optional — omit for header-only auth)")
+    role: str | None = Field(default=None, description="Starburst role for X-Trino-Role header (e.g. your_starburst_role)")
     catalog: str = Field(default="bigquery", description="Default catalog (BigQuery for Starburst Galaxy)")
-    schema_name: str = Field(default="public", alias="schema", description="Default schema")
+    schema_name: str = Field(default="public", validation_alias="STARBURST_SCHEMA", description="Default schema")
     # Timeout for individual HTTP requests to Starburst (not query timeout)
     request_timeout_seconds: int = Field(default=30, description="HTTP request timeout")
     # Resource group routing (ADR-025)
@@ -42,6 +46,7 @@ class StarburstConfig(BaseSettings):
         default="graph-olap-export-worker",
         description="Source identifier for Starburst",
     )
+    ssl_verify: bool = Field(default=True, description="Verify SSL certificates (set False for self-signed certs)")
 
 
 class GCSConfig(BaseSettings):
@@ -49,10 +54,10 @@ class GCSConfig(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="GCS_")
 
-    project: str = Field(alias="GCP_PROJECT", description="GCP project ID")
+    project: str = Field(validation_alias="GCP_PROJECT", description="GCP project ID")
     emulator_host: str | None = Field(
         default=None,
-        alias="STORAGE_EMULATOR_HOST",
+        validation_alias="STORAGE_EMULATOR_HOST",
         description="GCS emulator endpoint (for testing)",
     )
 
@@ -67,7 +72,7 @@ class ControlPlaneConfig(BaseSettings):
     max_retries: int = Field(default=5, description="Max retry attempts")
     internal_api_key: SecretStr | None = Field(
         default=None,
-        alias="GRAPH_OLAP_INTERNAL_API_KEY",
+        validation_alias="GRAPH_OLAP_INTERNAL_API_KEY",
         description="Internal API key for service-to-service auth",
     )
 
@@ -86,27 +91,27 @@ class Settings(BaseSettings):
     )
 
     # Core GCP settings
-    gcp_project: str = Field(alias="GCP_PROJECT", description="GCP project ID")
+    gcp_project: str = Field(validation_alias="GCP_PROJECT", description="GCP project ID")
 
     # Worker loop settings (ADR-025)
     poll_interval_seconds: int = Field(
         default=5,
-        alias="POLL_INTERVAL_SECONDS",
+        validation_alias="POLL_INTERVAL_SECONDS",
         description="How often to run main loop when work is found",
     )
     empty_poll_backoff_seconds: int = Field(
         default=10,
-        alias="EMPTY_POLL_BACKOFF_SECONDS",
+        validation_alias="EMPTY_POLL_BACKOFF_SECONDS",
         description="Backoff seconds when no work found",
     )
     claim_limit: int = Field(
         default=10,
-        alias="CLAIM_LIMIT",
+        validation_alias="CLAIM_LIMIT",
         description="Max jobs to claim per cycle",
     )
     poll_limit: int = Field(
         default=10,
-        alias="POLL_LIMIT",
+        validation_alias="POLL_LIMIT",
         description="Max jobs to poll per cycle",
     )
 
@@ -121,6 +126,13 @@ class Settings(BaseSettings):
 
     # Feature flags
     dry_run: bool = Field(default=False, description="Skip actual exports (for testing)")
+    direct_export: bool = Field(
+        default=True,
+        validation_alias="DIRECT_EXPORT",
+        description="Use direct PyArrow export instead of Starburst system.unload. "
+        "When True (default), queries are executed and results written to GCS via PyArrow. "
+        "When False, uses async system.unload with polling.",
+    )
 
 
 @lru_cache
