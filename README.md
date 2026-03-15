@@ -91,6 +91,22 @@ A pharma safety officer needs to trace every patient who received a medication f
 - **The old way:** Call each distributor, cross-reference spreadsheets, takes days or weeks
 - **With Graph OLAP:** Trace the complete distribution chain instantly, identify every affected patient in seconds
 
+### "How many people are sharing this Netflix account?"
+
+A streaming service analyst needs to detect account sharing — finding all devices, IP addresses, and locations connected to a single account.
+
+- **The old way:** Complex SQL with 10+ JOINs, takes 4+ minutes, often misses patterns
+- **With Graph OLAP:** See the entire sharing network instantly — devices, IPs, cities, simultaneous streams — in 2 milliseconds
+
+```
+Account "12345"
+    ├── Profile "Dad" ──► iPhone (New York)
+    ├── Profile "Mom" ──► Smart TV (New York)
+    └── Profile "Kids" ──► iPad (Chicago) ← SUSPICIOUS: Different city!
+```
+
+**This applies to:** Netflix, Disney+, Spotify, HBO Max, gaming subscriptions, SaaS license abuse — any service with account sharing problems. [See detailed use case →](docs/market-research/streaming-account-sharing.md)
+
 ---
 
 ## Why This Matters
@@ -347,7 +363,7 @@ Each demo includes **interactive visualizations** — you'll see the connections
 
 ```bash
 # 1. Get the code
-git clone https://github.com/your-org/graph-olap-local-deploy.git
+git clone <repository-url>
 cd graph-olap-local-deploy
 
 # 2. Build and deploy (first time takes ~15 min, after that ~2 min)
@@ -410,21 +426,7 @@ make teardown                   # Remove everything
 | **Raw SQL** | 4+ minutes for 4-hop queries, complex joins | 2ms, simple Cypher |
 | **Build it yourself** | 6-12 months engineering, ongoing maintenance | Production-ready today |
 
-**[Full competitive analysis →](docs/market-research/competitive-landscape.md)**
-
----
-
-## Quick ROI Calculator
-
-| If you currently... | You save... |
-|---------------------|-------------|
-| Pay $500/month for Neo4j/Neptune | **$6,000/year** (zero idle cost) |
-| Spend 2 days/week on SQL joins for connection queries | **80+ hours/year** (instant Cypher) |
-| Wait 2 weeks for IT to provision graph infrastructure | **Immediate** (self-service) |
-| Hire consultants for fraud network analysis | **$50-200k/year** (analysts do it themselves) |
-| Miss fraud due to slow queries | **$millions** in prevented losses |
-
-**[Full pricing comparison →](docs/market-research/cloud-pricing-comparison.md)**
+**See more in the [market research folder →](docs/market-research/README.md)**
 
 ---
 

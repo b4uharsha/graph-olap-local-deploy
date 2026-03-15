@@ -21,12 +21,9 @@
 
 | Document | Description |
 |----------|-------------|
-| [Competitive Landscape](competitive-landscape.md) | Full analysis of competitors (Neo4j, PuppyGraph, Neptune, etc.) |
-| [Cloud Pricing Comparison](cloud-pricing-comparison.md) | What competitors charge and how Graph OLAP saves 60-99% |
-| [Public Sector Use Cases](public-sector-use-cases.md) | Government fraud detection, healthcare, tax — $233-521B opportunity |
+| [Public Sector Use Cases](public-sector-use-cases.md) | Government fraud detection, healthcare, tax |
+| [Streaming Account Sharing](streaming-account-sharing.md) | Detect account sharing patterns |
 | [Platform & DevOps Guide](platform-devops-guide.md) | How to deploy as an internal platform service |
-| [Battlecard](battlecard.md) | Sales objection handling and competitive positioning |
-| [Market Opportunity](market-opportunity.md) | Market size, growth, and target segments |
 
 ---
 
@@ -83,31 +80,7 @@ The graph database market is projected to grow from **$3.3B (2025) → $11.4B (2
 
 ---
 
-## Cloud Pricing Summary
-
-| Solution | Minimum Monthly Cost | Can Scale to Zero? |
-|----------|---------------------|-------------------|
-| **Graph OLAP** | **$0** (your K8s) | **Yes** |
-| Neo4j Aura | $65/month | No |
-| Amazon Neptune | ~$134/month | No |
-| TigerGraph Cloud | Contact sales (~$5k+) | No |
-| PuppyGraph | Free tier available | Partial |
-
-**[Full pricing analysis →](cloud-pricing-comparison.md)**
-
----
-
-## Public Sector Opportunity
-
-| Region | Annual Fraud Loss |
-|--------|------------------|
-| United States | $233-521 billion |
-| United Kingdom | £55-81 billion |
-| NHS Healthcare | £1.3 billion recovered |
-
-**Graph OLAP is purpose-built for government:** in-house deployment, data never leaves the network, per-analyst isolation for security clearances.
-
-**[Full public sector analysis →](public-sector-use-cases.md)**
+**[Public sector use cases →](public-sector-use-cases.md)**
 
 ---
 
@@ -129,9 +102,6 @@ The graph database market is projected to grow from **$3.3B (2025) → $11.4B (2
 
 ## Quick Links
 
-- [Competitive Landscape →](competitive-landscape.md)
-- [Cloud Pricing Comparison →](cloud-pricing-comparison.md)
 - [Public Sector Use Cases →](public-sector-use-cases.md)
+- [Streaming Account Sharing →](streaming-account-sharing.md)
 - [Platform & DevOps Guide →](platform-devops-guide.md)
-- [Sales Battlecard →](battlecard.md)
-- [Market Opportunity →](market-opportunity.md)
