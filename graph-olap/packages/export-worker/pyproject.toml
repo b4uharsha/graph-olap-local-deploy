@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Graph OLAP snapshot export worker (K8s Deployment or Cloud Functions)"
 readme = "README.md"
 requires-python = ">=3.14"
-license = { text = "Proprietary" }
+license = { text = "Apache-2.0" }
 
 dependencies = [
     # GCS for Parquet file operations

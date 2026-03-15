@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Graph OLAP Platform Control Plane"
 readme = "README.md"
 requires-python = ">=3.14"
-license = {text = "Proprietary"}
+license = {text = "Apache-2.0"}
 authors = [
     {name = "Graph OLAP Team"}
 ]

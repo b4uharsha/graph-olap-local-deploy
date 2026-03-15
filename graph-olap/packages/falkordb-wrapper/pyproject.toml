@@ -7,7 +7,7 @@ name = "falkordb-wrapper"
 version = "0.1.0"
 description = "FastAPI wrapper for embedded FalkorDB graph database instances"
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 requires-python = ">=3.14"
 authors = [
     { name = "Graph OLAP Platform Team" }
@@ -16,7 +16,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: FastAPI",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
     "Topic :: Database :: Database Engines/Servers",

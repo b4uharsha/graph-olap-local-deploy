@@ -15,7 +15,7 @@
 
 global:
   imageRegistry: ""
-  gcpProject: "testcicd-436812"
+  gcpProject: "your-gcp-project-id"  # Replace with your GCP project ID
   environment: "development"
 
 # -----------------------------------------------------------------------------
@@ -54,7 +54,7 @@ control-plane:
     host: "0.0.0.0"
     port: "8080"
     debug: "true"
-    gcpProject: "testcicd-436812"
+    gcpProject: "your-gcp-project-id"  # Replace with your GCP project ID
     gcs:
       bucket: "graph-olap-local-dev"
       storageEmulatorHost: "http://fake-gcs-local:4443"
@@ -70,12 +70,12 @@ control-plane:
       ingressClass: "nginx"
       gcpSecret: "gcp-sa-key"
     extensionServer:
-      url: "https://free-cluster-harshagraph.trino.galaxy.starburst.io:443"
+      url: "https://your-cluster.trino.galaxy.starburst.io:443"  # Replace with your Starburst URL
     starburst:
-      url: "https://free-cluster-harshagraph.trino.galaxy.starburst.io:443"
+      url: "https://your-cluster.trino.galaxy.starburst.io:443"  # Replace with your Starburst URL
       catalog: "tpch"
       timeoutSeconds: "120"
-      user: "b4uharsha@harshagraph.galaxy.starburst.io"
+      user: "your-service-account@your-org.galaxy.starburst.io"  # Replace with your Starburst user
     jobs:
       reconciliationIntervalSeconds: "10"
       lifecycleIntervalSeconds: "10"
@@ -160,16 +160,16 @@ export-worker:
       key: "GRAPH_OLAP_INTERNAL_API_KEY"
 
   config:
-    gcpProject: "testcicd-436812"
+    gcpProject: "your-gcp-project-id"  # Replace with your GCP project ID
     starburst:
-      url: "https://free-cluster-harshagraph.trino.galaxy.starburst.io:443"
+      url: "https://your-cluster.trino.galaxy.starburst.io:443"  # Replace with your Starburst URL
       catalog: "tpch"
       schema: "tiny"
       requestTimeoutSeconds: "30"
       clientTags: "graph-olap-export"
       source: "graph-olap-export-worker"
     controlPlane:
-      url: "https://free-cluster-harshagraph.trino.galaxy.starburst.io:443"
+      url: "http://graph-olap-control-plane:8080"  # Internal control plane URL
       timeoutSeconds: "30"
       maxRetries: "5"
     worker:
